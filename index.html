@@ -36,17 +36,20 @@
         .sw .sl:before { content:''; position:absolute; width:14px; height:14px; left:3px; top:3px; background:white; border-radius:50%; transition:.25s; }
         .sw input:checked+.sl { background:#667eea; }
         .sw input:checked+.sl:before { transform:translateX(18px); }
-        #loading-screen { position:fixed; inset:0; background:#0f1419; z-index:9999; display:flex; flex-direction:column; align-items:center; justify-content:center; color:white; }
+        #loading-screen { position:fixed; inset:0; background:#0f1419; z-index:9999; display:flex; flex-direction:column; align-items:center; justify-content:center; color:white; padding: 20px; text-align: center; }
         .loader-bar { width: 200px; height: 4px; background: #2d3748; margin-top: 15px; border-radius: 2px; overflow: hidden; position: relative;}
         .loader-progress { width: 0%; height: 100%; background: #667eea; position: absolute; transition: width 0.4s; }
+        .error-box { max-width: 500px; background: #2d3748; padding: 20px; border-radius: 8px; border-top: 4px solid #fc8181; margin-top: 15px; text-align: left; }
+        .error-box code { display: block; background: #1a202c; padding: 10px; margin-top: 10px; border-radius: 4px; font-size: 11px; color: #fc8181; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
     </style>
 </head>
 <body>
 
 <div id="loading-screen">
     <h2>🗺️ Cargando Dashboard GIS Regional</h2>
-    <p id="loading-txt" style="color:#718096; margin-top:8px;">Conectando con los servicios espaciales...</p>
+    <p id="loading-txt" style="color:#718096; margin-top:8px;">Conectando de forma directa con los servidores de SGR Ecuador...</p>
     <div class="loader-bar"><div id="loader-proc" class="loader-progress"></div></div>
+    <div id="error-container"></div>
 </div>
 
 <div class="header">
@@ -108,24 +111,11 @@ function reprojectGeoJSON(geojson) {
     return geojson;
 }
 
-// SISTEMA DE PUENTES RESILIENTES MULTI-RUTA (EVITA CAÍDAS DE SERVIDORES PROXY)
-async function fetchSmart(url) {
-    const routes = [
-        u => 'https://api.allorigins.win/get?url=' + encodeURIComponent(u),
-        u => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u),
-        u => 'https://corsproxy.io/?' + encodeURIComponent(u)
-    ];
-
-    for(let route of routes) {
-        try {
-            const res = await fetch(route(url));
-            if(!res.ok) continue;
-            let data = await res.json();
-            if (data.contents) data = (typeof data.contents === 'string') ? JSON.parse(data.contents) : data.contents;
-            if (data && data.features) return data;
-        } catch(e) {}
-    }
-    throw new Error("Todas las rutas de conexión fallaron");
+// CARGADOR DIRECTO INTEGRADO NATIVO SIN PROXIES EXTERNOS
+async function fetchDirect(url) {
+    const response = await fetch(url, { method: 'GET', mode: 'cors' });
+    if(!response.ok) throw new Error("HTTP error " + response.status);
+    return await response.json();
 }
 
 async function loadData() {
@@ -136,13 +126,13 @@ async function loadData() {
     
     try {
         document.getElementById('loading-txt').textContent = "Descargando Asistencias Humanitarias...";
-        document.getElementById('loader-proc').style.width = "30%";
-        const data1 = await fetchSmart(urls.f1);
+        document.getElementById('loader-proc').style.width = "40%";
+        const data1 = await fetchDirect(urls.f1);
         D.f1 = reprojectGeoJSON(data1);
         
         document.getElementById('loading-txt').textContent = "Descargando Eventos Adversos...";
-        document.getElementById('loader-proc').style.width = "70%";
-        const data2 = await fetchSmart(urls.f2);
+        document.getElementById('loader-proc').style.width = "80%";
+        const data2 = await fetchDirect(urls.f2);
         D.f2 = reprojectGeoJSON(data2);
 
         document.getElementById('loader-proc').style.width = "100%";
@@ -152,7 +142,19 @@ async function loadData() {
         }, 300);
 
     } catch(e) {
-        document.getElementById('loading-screen').innerHTML = "<h2>❌ Error de Red Persistente</h2><p>Los servidores de SGR rechazaron la conexión segura. Inténtalo de nuevo en unos minutos o refresca la página.</p>";
+        console.error(e);
+        // EN CASO DE BLOQUEO CORS ESTRICTO DEL SERVIDOR DE LA SGR, MUESTRA GUÍA INTELIGENTE EN PANTALLA
+        document.getElementById('loader-bar')?.remove();
+        document.getElementById('error-container').innerHTML = `
+            <div class="error-box">
+                <b style="color:#fc8181; font-size:16px;">🛑 Bloqueo de Seguridad CORS Detectado</b><br><br>
+                El servidor oficial de la SGR tiene una política de seguridad estricta que no permite a GitHub Pages leer los datos directamente.<br><br>
+                <b>Para solucionarlo de inmediato en tu navegador, abre una pestaña nueva e ingresa a estos dos enlaces oficiales para autorizar los permisos:</b>
+                <code>${urls.f1}</code>
+                <code>${urls.f2}</code>
+                <br>Una vez que las páginas carguen con texto en la otra pestaña, regresa aquí y presiona el botón <b>Actualizar Base de Datos</b>.
+            </div>
+        `;
     }
 }
 
