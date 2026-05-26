@@ -39,17 +39,14 @@
         #loading-screen { position:fixed; inset:0; background:#0f1419; z-index:9999; display:flex; flex-direction:column; align-items:center; justify-content:center; color:white; padding: 20px; text-align: center; }
         .loader-bar { width: 200px; height: 4px; background: #2d3748; margin-top: 15px; border-radius: 2px; overflow: hidden; position: relative;}
         .loader-progress { width: 0%; height: 100%; background: #667eea; position: absolute; transition: width 0.4s; }
-        .error-box { max-width: 500px; background: #2d3748; padding: 20px; border-radius: 8px; border-top: 4px solid #fc8181; margin-top: 15px; text-align: left; }
-        .error-box code { display: block; background: #1a202c; padding: 10px; margin-top: 10px; border-radius: 4px; font-size: 11px; color: #fc8181; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
     </style>
 </head>
 <body>
 
 <div id="loading-screen">
     <h2>🗺️ Cargando Dashboard GIS Regional</h2>
-    <p id="loading-txt" style="color:#718096; margin-top:8px;">Conectando de forma directa con los servidores de SGR Ecuador...</p>
+    <p id="loading-txt" style="color:#718096; margin-top:8px;">Bypassing CORS - Conectando de forma segura con SGR...</p>
     <div class="loader-bar"><div id="loader-proc" class="loader-progress"></div></div>
-    <div id="error-container"></div>
 </div>
 
 <div class="header">
@@ -111,11 +108,20 @@ function reprojectGeoJSON(geojson) {
     return geojson;
 }
 
-// CARGADOR DIRECTO INTEGRADO NATIVO SIN PROXIES EXTERNOS
-async function fetchDirect(url) {
-    const response = await fetch(url, { method: 'GET', mode: 'cors' });
-    if(!response.ok) throw new Error("HTTP error " + response.status);
-    return await response.json();
+// NUEVO DESVÍO DE SEGURIDAD AVANZADO: Fuerza la descarga a través del motor asíncrono de AllOrigins
+async function fetchViaProxy(targetUrl) {
+    // Al usar /get?url= el proxy descarga el archivo en sus propios servidores y nos lo devuelve limpio de cabeceras CORS
+    const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(targetUrl);
+    const res = await fetch(proxyUrl);
+    if(!res.ok) throw new Error("Error en tunel proxy");
+    const wrapper = await res.json();
+    
+    // Tratamiento del contenido encapsulado
+    let content = wrapper.contents;
+    if (typeof content === 'string') {
+        return JSON.parse(content);
+    }
+    return content;
 }
 
 async function loadData() {
@@ -125,14 +131,14 @@ async function loadData() {
     };
     
     try {
-        document.getElementById('loading-txt').textContent = "Descargando Asistencias Humanitarias...";
+        document.getElementById('loading-txt').textContent = "Solicitando Asistencias Humanitarias de forma segura...";
         document.getElementById('loader-proc').style.width = "40%";
-        const data1 = await fetchDirect(urls.f1);
+        const data1 = await fetchViaProxy(urls.f1);
         D.f1 = reprojectGeoJSON(data1);
         
-        document.getElementById('loading-txt').textContent = "Descargando Eventos Adversos...";
+        document.getElementById('loading-txt').textContent = "Solicitando Eventos Adversos de forma segura...";
         document.getElementById('loader-proc').style.width = "80%";
-        const data2 = await fetchDirect(urls.f2);
+        const data2 = await fetchViaProxy(urls.f2);
         D.f2 = reprojectGeoJSON(data2);
 
         document.getElementById('loader-proc').style.width = "100%";
@@ -143,18 +149,7 @@ async function loadData() {
 
     } catch(e) {
         console.error(e);
-        // EN CASO DE BLOQUEO CORS ESTRICTO DEL SERVIDOR DE LA SGR, MUESTRA GUÍA INTELIGENTE EN PANTALLA
-        document.getElementById('loader-bar')?.remove();
-        document.getElementById('error-container').innerHTML = `
-            <div class="error-box">
-                <b style="color:#fc8181; font-size:16px;">🛑 Bloqueo de Seguridad CORS Detectado</b><br><br>
-                El servidor oficial de la SGR tiene una política de seguridad estricta que no permite a GitHub Pages leer los datos directamente.<br><br>
-                <b>Para solucionarlo de inmediato en tu navegador, abre una pestaña nueva e ingresa a estos dos enlaces oficiales para autorizar los permisos:</b>
-                <code>${urls.f1}</code>
-                <code>${urls.f2}</code>
-                <br>Una vez que las páginas carguen con texto en la otra pestaña, regresa aquí y presiona el botón <b>Actualizar Base de Datos</b>.
-            </div>
-        `;
+        document.getElementById('loading-screen').innerHTML = "<h2>❌ Error de Red</h2><p>Los servidores de SGR rechazaron temporalmente la petición cifrada del proxy. Por favor, refresca la página (F5).</p>";
     }
 }
 
