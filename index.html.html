@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard GIS Regional Real-Time</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:'Segoe UI',sans-serif; background:#0f1419; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        .header { background:linear-gradient(135deg,#667eea,#764ba2); color:white; padding:16px 24px; display:flex; align-items:center; justify-content:space-between; flex-shrink: 0; }
+        .header h1 { font-size:20px; }
+        .top-filters { background: #1a202c; border-bottom: 1px solid #2d3748; padding: 10px 24px; display: flex; gap: 15px; align-items: center; flex-shrink: 0; }
+        .top-filters .filter-group { display: flex; align-items: center; gap: 8px; flex: 1; }
+        .top-filters .flabel { color: #a0aec0; font-size: 12px; text-transform: uppercase; font-weight: 600; }
+        .top-filters .fsel { flex: 1; background:#2d3748; border:1px solid #4a5568; border-radius:6px; padding:8px 10px; color:#e2e8f0; font-size:13px; cursor:pointer; }
+        .top-filters .fsel:disabled { opacity:.35; cursor:not-allowed; }
+        .btn-clear { padding: 8px 16px; background:#4a5568; color:white; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; }
+        .main { display:flex; flex: 1; overflow: hidden; }
+        #map { flex:1; }
+        .sidebar { width:320px; background:#1a202c; color:#e2e8f0; overflow-y:auto; border-left:1px solid #2d3748; display:flex; flex-direction:column; }
+        .panel { padding:14px 16px; border-bottom:1px solid #2d3748; }
+        .panel-title { font-size:10px; text-transform:uppercase; color:#718096; margin-bottom:10px; font-weight:700; }
+        .stat-card { background:#2d3748; border-radius:7px; padding:11px 12px; margin-bottom:7px; border-left:3px solid #667eea; }
+        .stat-card.orange { border-left-color:#f6ad55; }
+        .stat-card.teal { border-left-color:#63b3ed; }
+        .stat-lbl { font-size:10px; color:#718096; text-transform:uppercase; }
+        .stat-val { font-size:26px; font-weight:700; color:#f6ad55; }
+        .stat-card.teal .stat-val { color:#63b3ed; }
+        .stat-detail { margin-top:8px; font-size:11px; color:#cbd5e0; max-height:200px; overflow-y:auto; line-height: 1.6; }
+        .layer-row { display:flex; align-items:center; justify-content:space-between; padding:8px 0; font-size:13px; }
+        .dot { width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:7px; }
+        .sw { position:relative; width:38px; height:20px; }
+        .sw input { opacity:0; width:0; height:0; }
+        .sw .sl { position:absolute; inset:0; background:#4a5568; border-radius:20px; cursor:pointer; transition:.25s; }
+        .sw .sl:before { content:''; position:absolute; width:14px; height:14px; left:3px; top:3px; background:white; border-radius:50%; transition:.25s; }
+        .sw input:checked+.sl { background:#667eea; }
+        .sw input:checked+.sl:before { transform:translateX(18px); }
+        #loading-screen { position:fixed; inset:0; background:#0f1419; z-index:9999; display:flex; flex-direction:column; align-items:center; justify-content:center; color:white; }
+    </style>
+</head>
+<body>
+
+<div id="loading-screen">
+    <h2>🗺️ Cargando Dashboard GIS Regional</h2>
+    <p style="color:#718096; margin-top:8px;">Descargando datos en tiempo real de la SGR de Ecuador...</p>
+</div>
+
+<div class="header">
+    <h1>🗺️ Dashboard GIS Regional</h1>
+    <button class="btn-clear" style="background:rgba(255,255,255,0.2)" onclick="location.reload()">🔄 Actualizar Base de Datos</button>
+</div>
+
+<div class="top-filters">
+  <div class="filter-group"><label class="flabel">Provincia</label><select id="sel-prov" class="fsel" onchange="onProv()"><option value="">— Todas —</option></select></div>
+  <div class="filter-group"><label class="flabel">Cantón</label><select id="sel-cant" class="fsel" disabled onchange="onCant()"><option value="">— Todos —</option></select></div>
+  <div class="filter-group"><label class="flabel">Parroquia</label><select id="sel-parr" class="fsel" disabled onchange="onParr()"><option value="">— Todas —</option></select></div>
+  <button class="btn-clear" onclick="clearSel()">✕ Limpiar filtros</button>
+</div>
+
+<div class="main">
+  <div id="map"></div>
+  <div class="sidebar">
+    <div class="panel">
+      <div class="panel-title">📊 Estadísticas de la Zona</div>
+      <div class="stat-card orange">
+        <div class="stat-lbl">🏥 Puntos Asistencia</div>
+        <div class="stat-val" id="cnt1">—</div>
+        <div id="det1" class="stat-detail"></div>
+      </div>
+      <div class="stat-card teal">
+        <div class="stat-lbl">⚠️ Puntos Afectación</div>
+        <div class="stat-val" id="cnt2">—</div>
+        <div id="det2" class="stat-detail"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">👁 Control de Capas</div>
+      <div class="layer-row"><span><span class="dot" style="background:#f6ad55"></span>Asistencias</span><label class="sw"><input type="checkbox" id="tog1" checked onchange="togglePts(1)"><span class="sl"></span></label></div>
+      <div class="layer-row"><span><span class="dot" style="background:#63b3ed"></span>Afectaciones</span><label class="sw"><input type="checkbox" id="tog2" checked onchange="togglePts(2)"><span class="sl"></span></label></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.min.js"></script>
+<script>
+const D = { f1:null, f2:null };
+let map, renderer, ptLayers={};
+
+proj4.defs('EPSG:32717', '+proj=utm +zone=17 +south +datum=WGS84 +units=m +no_defs');
+
+function isUTM(coords) { return coords && coords.length >= 2 && (Math.abs(coords[0]) > 360 || Math.abs(coords[1]) > 360); }
+function reprojectCoord(coord) { return proj4('EPSG:32717', 'EPSG:4326', [coord[0], coord[1]]); }
+function reprojectGeometry(geom) {
+    if (!geom) return geom;
+    const g = JSON.parse(JSON.stringify(geom));
+    if (g.type === 'Point' && isUTM(g.coordinates)) g.coordinates = reprojectCoord(g.coordinates);
+    return g;
+}
+function reprojectGeoJSON(geojson) {
+    if (!geojson || !geojson.features) return geojson;
+    geojson.features.forEach(f => { if(f.geometry) f.geometry = reprojectGeometry(f.geometry); });
+    return geojson;
+}
+
+async function loadData() {
+    const urls = {
+        f1: 'https://simulacro.gestionderiesgos.gob.ec/api/public/get_geoJson_asistencias?api_key=da8628b5a3cdb0ba26c8c888831fe64ea1a9268b',
+        f2: 'https://simulacro.gestionderiesgos.gob.ec/api/public/get_geoJson_afectaciones?api_key=da8628b5a3cdb0ba26c8c888831fe64ea1a9268b'
+    };
+    try {
+        const [r1, r2] = await Promise.all([fetch(urls.f1), fetch(urls.f2)]);
+        D.f1 = reprojectGeoJSON(await r1.json());
+        D.f2 = reprojectGeoJSON(await r2.json());
+        document.getElementById('loading-screen').style.display = 'none';
+        initDashboard();
+    } catch(e) {
+        document.getElementById('loading-screen').innerHTML = "<h2>❌ Error de Red</h2><p>No se pudo conectar directamente con los servidores de SGR.</p>";
+    }
+}
+
+function initDashboard() {
+    renderer = L.canvas({ padding: 0.5 });
+    map = L.map('map', { preferCanvas: true, renderer }).setView([-1.5, -78.0], 7);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+    applyFilters();
+}
+
+function isExcluded(k) {
+    const kl = k.toLowerCase().trim();
+    return ['año', 'mes', 'dia', 'día', 'zona', 'mes de entrega', 'secuencianacional', 'secuenciaprovincial', 'latitud', 'longitud', 'id', 'objectid'].includes(kl) || kl.includes('shape');
+}
+
+function applyFilters() {
+    [1,2].forEach(n => { if (ptLayers[n]) map.removeLayer(ptLayers[n]); });
+    drawPts(1,'#f6ad55','#c05621','🏥 Asistencia');
+    drawPts(2,'#63b3ed','#2b6cb0','⚠️ Afectación');
+}
+
+function drawPts(n, fill, stroke, label) {
+    const src = D['f' + n];
+    const cntEl = document.getElementById('cnt'+n);
+    const detEl = document.getElementById('det'+n);
+    if (!src || !src.features) return;
+    
+    cntEl.textContent = src.features.length.toLocaleString();
+
+    if (detEl) {
+        if (n === 1) {
+            let breakdown = {};
+            src.features.forEach(f => {
+                if(!f.properties) return;
+                for (let k in f.properties) {
+                    let v = f.properties[k];
+                    if (typeof v === 'number' && v > 0 && !isExcluded(k)) breakdown[k] = (breakdown[k] || 0) + v;
+                }
+            });
+            let h = `<b style="color:#f6ad55">Total de ítems / kits</b><br>`;
+            for(let k in breakdown) h += `• ${k}: ${breakdown[k]}<br>`;
+            detEl.innerHTML = Object.keys(breakdown).length > 0 ? h : 'Sin registros de kits.';
+        } else {
+            let breakdown = {};
+            src.features.forEach(f => {
+                if(!f.properties) return;
+                let evtKey = Object.keys(f.properties).find(k => k.toLowerCase().includes('evento'));
+                let evt = evtKey && f.properties[evtKey] ? f.properties[evtKey] : null;
+                if(evt) breakdown[evt] = (breakdown[evt] || 0) + 1;
+            });
+            let h = `<b style="color:#63b3ed">Tipos de evento:</b><br>`;
+            for(let k in breakdown) h += `• ${k}: ${breakdown[k]}<br>`;
+            detEl.innerHTML = Object.keys(breakdown).length > 0 ? h : 'Sin registros.';
+        }
+    }
+
+    ptLayers[n] = L.geoJSON(src, {
+        renderer,
+        pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:7,fillColor:fill,color:stroke,weight:2,opacity:.9,fillOpacity:.75}),
+        onEachFeature:(f,layer)=>{
+            if (!f.properties) return;
+            let h='<div style="font-size:12px;max-width:260px;max-height:220px;overflow-y:auto;"><b style="color:'+fill+'">'+label+'</b><hr style="margin:4px 0">';
+            Object.entries(f.properties).forEach(([k,v])=>{ if(v != null && v !== '' && !isExcluded(k)) h+='<b>'+k+':</b> '+v+'<br>'; });
+            layer.bindPopup(h+'</div>');
+        }
+    });
+    if (document.getElementById('tog'+n).checked) ptLayers[n].addTo(map);
+}
+
+function togglePts(n) { if(ptLayers[n]) document.getElementById('tog'+n).checked ? map.addLayer(ptLayers[n]) : map.removeLayer(ptLayers[n]); }
+function clearSel() { location.reload(); }
+window.addEventListener('DOMContentLoaded', loadData);
+</script>
+</body>
+</html>
