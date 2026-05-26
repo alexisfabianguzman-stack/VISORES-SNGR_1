@@ -37,13 +37,16 @@
         .sw input:checked+.sl { background:#667eea; }
         .sw input:checked+.sl:before { transform:translateX(18px); }
         #loading-screen { position:fixed; inset:0; background:#0f1419; z-index:9999; display:flex; flex-direction:column; align-items:center; justify-content:center; color:white; }
+        .loader-bar { width: 200px; height: 4px; background: #2d3748; margin-top: 15px; border-radius: 2px; overflow: hidden; position: relative;}
+        .loader-progress { width: 0%; height: 100%; background: #667eea; position: absolute; transition: width 0.4s; }
     </style>
 </head>
 <body>
 
 <div id="loading-screen">
     <h2>🗺️ Cargando Dashboard GIS Regional</h2>
-    <p style="color:#718096; margin-top:8px;">Descargando datos en tiempo real de la SGR de Ecuador...</p>
+    <p id="loading-txt" style="color:#718096; margin-top:8px;">Conectando con los servicios espaciales...</p>
+    <div class="loader-bar"><div id="loader-proc" class="loader-progress"></div></div>
 </div>
 
 <div class="header">
@@ -64,20 +67,20 @@
     <div class="panel">
       <div class="panel-title">📊 Estadísticas de la Zona</div>
       <div class="stat-card orange">
-        <div class="stat-lbl">🏥 Puntos Asistencia</div>
+        <div class="stat-lbl">🏥 Asistencias Humanitarias</div>
         <div class="stat-val" id="cnt1">—</div>
         <div id="det1" class="stat-detail"></div>
       </div>
       <div class="stat-card teal">
-        <div class="stat-lbl">⚠️ Puntos Afectación</div>
+        <div class="stat-lbl">⚠️ Eventos Adversos</div>
         <div class="stat-val" id="cnt2">—</div>
         <div id="det2" class="stat-detail"></div>
       </div>
     </div>
     <div class="panel">
       <div class="panel-title">👁 Control de Capas</div>
-      <div class="layer-row"><span><span class="dot" style="background:#f6ad55"></span>Asistencias</span><label class="sw"><input type="checkbox" id="tog1" checked onchange="togglePts(1)"><span class="sl"></span></label></div>
-      <div class="layer-row"><span><span class="dot" style="background:#63b3ed"></span>Afectaciones</span><label class="sw"><input type="checkbox" id="tog2" checked onchange="togglePts(2)"><span class="sl"></span></label></div>
+      <div class="layer-row"><span><span class="dot" style="background:#f6ad55"></span>Asistencias Humanitarias</span><label class="sw"><input type="checkbox" id="tog1" checked onchange="togglePts(1)"><span class="sl"></span></label></div>
+      <div class="layer-row"><span><span class="dot" style="background:#63b3ed"></span>Eventos Adversos</span><label class="sw"><input type="checkbox" id="tog2" checked onchange="togglePts(2)"><span class="sl"></span></label></div>
     </div>
   </div>
 </div>
@@ -105,19 +108,51 @@ function reprojectGeoJSON(geojson) {
     return geojson;
 }
 
+// SISTEMA DE PUENTES RESILIENTES MULTI-RUTA (EVITA CAÍDAS DE SERVIDORES PROXY)
+async function fetchSmart(url) {
+    const routes = [
+        u => 'https://api.allorigins.win/get?url=' + encodeURIComponent(u),
+        u => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u),
+        u => 'https://corsproxy.io/?' + encodeURIComponent(u)
+    ];
+
+    for(let route of routes) {
+        try {
+            const res = await fetch(route(url));
+            if(!res.ok) continue;
+            let data = await res.json();
+            if (data.contents) data = (typeof data.contents === 'string') ? JSON.parse(data.contents) : data.contents;
+            if (data && data.features) return data;
+        } catch(e) {}
+    }
+    throw new Error("Todas las rutas de conexión fallaron");
+}
+
 async function loadData() {
     const urls = {
         f1: 'https://simulacro.gestionderiesgos.gob.ec/api/public/get_geoJson_asistencias?api_key=da8628b5a3cdb0ba26c8c888831fe64ea1a9268b',
         f2: 'https://simulacro.gestionderiesgos.gob.ec/api/public/get_geoJson_afectaciones?api_key=da8628b5a3cdb0ba26c8c888831fe64ea1a9268b'
     };
+    
     try {
-        const [r1, r2] = await Promise.all([fetch(urls.f1), fetch(urls.f2)]);
-        D.f1 = reprojectGeoJSON(await r1.json());
-        D.f2 = reprojectGeoJSON(await r2.json());
-        document.getElementById('loading-screen').style.display = 'none';
-        initDashboard();
+        document.getElementById('loading-txt').textContent = "Descargando Asistencias Humanitarias...";
+        document.getElementById('loader-proc').style.width = "30%";
+        const data1 = await fetchSmart(urls.f1);
+        D.f1 = reprojectGeoJSON(data1);
+        
+        document.getElementById('loading-txt').textContent = "Descargando Eventos Adversos...";
+        document.getElementById('loader-proc').style.width = "70%";
+        const data2 = await fetchSmart(urls.f2);
+        D.f2 = reprojectGeoJSON(data2);
+
+        document.getElementById('loader-proc').style.width = "100%";
+        setTimeout(() => {
+            document.getElementById('loading-screen').style.display = 'none';
+            initDashboard();
+        }, 300);
+
     } catch(e) {
-        document.getElementById('loading-screen').innerHTML = "<h2>❌ Error de Red</h2><p>No se pudo conectar directamente con los servidores de SGR.</p>";
+        document.getElementById('loading-screen').innerHTML = "<h2>❌ Error de Red Persistente</h2><p>Los servidores de SGR rechazaron la conexión segura. Inténtalo de nuevo en unos minutos o refresca la página.</p>";
     }
 }
 
@@ -135,8 +170,8 @@ function isExcluded(k) {
 
 function applyFilters() {
     [1,2].forEach(n => { if (ptLayers[n]) map.removeLayer(ptLayers[n]); });
-    drawPts(1,'#f6ad55','#c05621','🏥 Asistencia');
-    drawPts(2,'#63b3ed','#2b6cb0','⚠️ Afectación');
+    drawPts(1,'#f6ad55','#c05621','🏥 Asistencia Humanitaria');
+    drawPts(2,'#63b3ed','#2b6cb0','⚠️ Evento Adverso');
 }
 
 function drawPts(n, fill, stroke, label) {
@@ -157,7 +192,7 @@ function drawPts(n, fill, stroke, label) {
                     if (typeof v === 'number' && v > 0 && !isExcluded(k)) breakdown[k] = (breakdown[k] || 0) + v;
                 }
             });
-            let h = `<b style="color:#f6ad55">Total de ítems / kits</b><br>`;
+            let h = `<b style="color:#f6ad55">Total de ítems / kits entregados</b><br>`;
             for(let k in breakdown) h += `• ${k}: ${breakdown[k]}<br>`;
             detEl.innerHTML = Object.keys(breakdown).length > 0 ? h : 'Sin registros de kits.';
         } else {
