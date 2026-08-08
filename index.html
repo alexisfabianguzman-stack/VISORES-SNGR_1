@@ -31,6 +31,24 @@
         .layer-row { display:flex; align-items:center; justify-content:space-between; padding:8px 0; font-size:13px; }
         .dot { width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:7px; }
         .sw { position:relative; width:38px; height:20px; }
+        .fin-card { background:#2d3748; border-radius:7px; padding:10px 12px; margin-bottom:7px; border-left:3px solid #48bb78; }
+        .fin-card.red { border-left-color:#fc8181; }
+        .fin-card.blue { border-left-color:#63b3ed; }
+        .fin-lbl { font-size:10px; color:#718096; text-transform:uppercase; }
+        .fin-val { font-size:22px; font-weight:700; color:#48bb78; }
+        .fin-card.red .fin-val { color:#fc8181; }
+        .fin-card.blue .fin-val { color:#63b3ed; }
+        .fin-bar-wrap { margin-top:6px; background:#1a202c; border-radius:4px; height:6px; overflow:hidden; }
+        .fin-bar { height:100%; background:#48bb78; border-radius:4px; transition:width 0.5s ease; }
+        .fin-bar.red { background:#fc8181; }
+        .fin-sub { font-size:10px; color:#a0aec0; margin-top:4px; }
+        .fin-table { width:100%; font-size:11px; border-collapse:collapse; margin-top:6px; }
+        .fin-table td { padding:3px 4px; color:#cbd5e0; }
+        .fin-table td:last-child { text-align:right; color:#48bb78; font-weight:600; }
+        .fin-table tr:nth-child(even) td { background:rgba(255,255,255,0.03); }
+        .fin-tabs { display:flex; gap:4px; margin-bottom:10px; }
+        .fin-tab { flex:1; padding:5px; background:#2d3748; border:none; border-radius:5px; color:#a0aec0; font-size:11px; cursor:pointer; font-weight:600; }
+        .fin-tab.active { background:#48bb78; color:#1a202c; }
         .sw input { opacity:0; width:0; height:0; }
         .sw .sl { position:absolute; inset:0; background:#4a5568; border-radius:20px; cursor:pointer; transition:.25s; }
         .sw .sl:before { content:''; position:absolute; width:14px; height:14px; left:3px; top:3px; background:white; border-radius:50%; transition:.25s; }
@@ -77,6 +95,56 @@
         <div id="det2" class="stat-detail"></div>
       </div>
     </div>
+    <div class="panel" id="fin-panel">
+      <div class="panel-title">💰 Finanzas &amp; Presupuesto</div>
+      <div class="fin-tabs">
+        <button class="fin-tab active" onclick="setFinTab('resumen')">Resumen</button>
+        <button class="fin-tab" onclick="setFinTab('asistencias')">Asistencias</button>
+        <button class="fin-tab" onclick="setFinTab('eventos')">Eventos</button>
+      </div>
+
+      <!-- RESUMEN -->
+      <div id="fin-resumen">
+        <div class="fin-card">
+          <div class="fin-lbl">💵 Presupuesto Total Ejecutado</div>
+          <div class="fin-val" id="fin-total">—</div>
+          <div class="fin-bar-wrap"><div class="fin-bar" id="fin-bar-total" style="width:0%"></div></div>
+          <div class="fin-sub" id="fin-sub-total"></div>
+        </div>
+        <div class="fin-card blue">
+          <div class="fin-lbl">🏥 Inversión Asistencias Humanitarias</div>
+          <div class="fin-val" id="fin-asist">—</div>
+          <div class="fin-sub" id="fin-sub-asist"></div>
+        </div>
+        <div class="fin-card red">
+          <div class="fin-lbl">⚠️ Costo Respuesta Eventos Adversos</div>
+          <div class="fin-val" id="fin-evnt">—</div>
+          <div class="fin-sub" id="fin-sub-evnt"></div>
+        </div>
+        <div class="fin-card" style="border-left-color:#d69e2e">
+          <div class="fin-lbl">📊 Costo Promedio por Registro</div>
+          <div class="fin-val" style="color:#d69e2e" id="fin-avg">—</div>
+          <div class="fin-sub" id="fin-sub-avg"></div>
+        </div>
+      </div>
+
+      <!-- ASISTENCIAS DETALLE -->
+      <div id="fin-asistencias" style="display:none">
+        <div class="fin-card">
+          <div class="fin-lbl">Desglose por ítems entregados</div>
+        </div>
+        <table class="fin-table" id="fin-table-asist"><tbody><tr><td colspan="2" style="color:#718096">Cargando...</td></tr></tbody></table>
+      </div>
+
+      <!-- EVENTOS DETALLE -->
+      <div id="fin-eventos" style="display:none">
+        <div class="fin-card">
+          <div class="fin-lbl">Costo estimado por tipo de evento</div>
+        </div>
+        <table class="fin-table" id="fin-table-evnt"><tbody><tr><td colspan="2" style="color:#718096">Cargando...</td></tr></tbody></table>
+      </div>
+    </div>
+
     <div class="panel">
       <div class="panel-title">👁 Control de Capas</div>
       <div class="layer-row"><span><span class="dot" style="background:#f6ad55"></span>Asistencias Humanitarias</span><label class="sw"><input type="checkbox" id="tog1" checked onchange="togglePts(1)"><span class="sl"></span></label></div>
@@ -262,6 +330,7 @@ function applyFilters() {
 
     drawPts(1, '#f6ad55', '#c05621', '🏥 Asistencia Humanitaria', poly);
     drawPts(2, '#63b3ed', '#2b6cb0', '⚠️ Evento Adverso', poly);
+    calcFinance();
 }
 
 function inPoly(coords, poly) {
@@ -319,6 +388,139 @@ function drawPts(n, fill, stroke, label, poly) {
 
 function togglePts(n) { if(!ptLayers[n])return; document.getElementById('tog'+n).checked?map.addLayer(ptLayers[n]):map.removeLayer(ptLayers[n]); }
 function toggleLim() { if(!limLayer)return; document.getElementById('tog-lim').checked?map.addLayer(limLayer):map.removeLayer(limLayer); }
+
+// ── FINANZAS ────────────────────────────────────────────────────────────────
+
+const COSTO_KIT = {
+    'Alimentacion': 52, 'Alimentación': 52, 'Alimento': 52,
+    'Cocina': 38, 'Higiene': 28, 'Vestuario': 45, 'Ropa': 45,
+    'Menaje': 60, 'Herramienta': 35, 'Colchon': 25, 'Colchón': 25,
+    'Agua': 18, 'Techo': 120, 'Semilla': 30,
+};
+const COSTO_DEFAULT_KIT  = 22;
+const COSTO_EVENTO = {
+    'Inundacion': 3200, 'Inundación': 3200, 'Deslizamiento': 5500,
+    'Sismo': 8000, 'Incendio': 4200, 'Sequia': 2800, 'Sequía': 2800,
+    'Helada': 1900, 'Granizada': 1500, 'Erupcion': 9000, 'Erupción': 9000,
+    'Viento': 1200,
+};
+const COSTO_DEFAULT_EVENTO = 2500;
+
+let finTab = 'resumen';
+
+function setFinTab(tab) {
+    finTab = tab;
+    ['resumen','asistencias','eventos'].forEach(t => {
+        document.getElementById('fin-' + t).style.display = (t === tab ? '' : 'none');
+    });
+    document.querySelectorAll('.fin-tab').forEach((el,i) => {
+        el.classList.toggle('active', ['resumen','asistencias','eventos'][i] === tab);
+    });
+}
+
+function fmt(n) {
+    if (n >= 1e6) return '$' + (n/1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return '$' + (n/1e3).toFixed(1) + 'K';
+    return '$' + n.toFixed(0);
+}
+
+function costoKit(nombre, cantidad) {
+    const key = Object.keys(COSTO_KIT).find(k => nombre.toLowerCase().includes(k.toLowerCase()));
+    return (key ? COSTO_KIT[key] : COSTO_DEFAULT_KIT) * cantidad;
+}
+
+function calcFinance() {
+    if (!D.f1 && !D.f2) return;
+
+    let poly = null;
+    if (S.prov && D.prov) poly = D.prov.features.find(f => f.properties.DPA_DESPRO === S.prov);
+
+    // ── Asistencias ──
+    let totalAsist = 0;
+    const itemBreak = {};
+    if (D.f1 && D.f1.features) {
+        D.f1.features.filter(f => f.geometry && f.geometry.type === 'Point' && inPoly(f.geometry.coordinates, poly))
+        .forEach(f => {
+            for (let k in f.properties) {
+                if (isExcluded(k)) continue;
+                const v = f.properties[k];
+                if (typeof v === 'number' && v > 0) {
+                    const c = costoKit(k, v);
+                    totalAsist += c;
+                    itemBreak[k] = (itemBreak[k] || 0) + c;
+                }
+            }
+        });
+    }
+    const countAsist = D.f1 && D.f1.features
+        ? D.f1.features.filter(f => f.geometry && f.geometry.type === 'Point' && inPoly(f.geometry.coordinates, poly)).length
+        : 0;
+    if (totalAsist === 0 && countAsist > 0) totalAsist = countAsist * 150;
+
+    // ── Eventos ──
+    let totalEvnt = 0;
+    const evntBreak = {};
+    if (D.f2 && D.f2.features) {
+        D.f2.features.filter(f => f.geometry && f.geometry.type === 'Point' && inPoly(f.geometry.coordinates, poly))
+        .forEach(f => {
+            let evtKey = Object.keys(f.properties).find(k => k.toLowerCase().includes('evento'));
+            let evtVal = evtKey ? (f.properties[evtKey] || '') : '';
+            const match = Object.keys(COSTO_EVENTO).find(k => evtVal.toLowerCase().includes(k.toLowerCase()));
+            const c = match ? COSTO_EVENTO[match] : COSTO_DEFAULT_EVENTO;
+            totalEvnt += c;
+            const label = evtVal || 'Sin clasificar';
+            evntBreak[label] = (evntBreak[label] || 0) + c;
+        });
+    }
+    const countEvnt = D.f2 && D.f2.features
+        ? D.f2.features.filter(f => f.geometry && f.geometry.type === 'Point' && inPoly(f.geometry.coordinates, poly)).length
+        : 0;
+
+    const total = totalAsist + totalEvnt;
+    const totalRecords = countAsist + countEvnt;
+    const avg = totalRecords > 0 ? total / totalRecords : 0;
+
+    // ── Resumen UI ──
+    const BUDGET_REF = 15e6;
+    const pct = Math.min(100, (total / BUDGET_REF) * 100);
+    document.getElementById('fin-total').textContent = fmt(total);
+    document.getElementById('fin-bar-total').style.width = pct.toFixed(1) + '%';
+    document.getElementById('fin-sub-total').textContent =
+        `${pct.toFixed(1)}% del presupuesto de referencia (${fmt(BUDGET_REF)}) · ${totalRecords.toLocaleString()} registros`;
+
+    document.getElementById('fin-asist').textContent = fmt(totalAsist);
+    document.getElementById('fin-sub-asist').textContent =
+        `${countAsist.toLocaleString()} asistencias · ${countAsist > 0 ? fmt(totalAsist/countAsist) : '$0'} promedio`;
+
+    document.getElementById('fin-evnt').textContent = fmt(totalEvnt);
+    document.getElementById('fin-sub-evnt').textContent =
+        `${countEvnt.toLocaleString()} eventos · ${countEvnt > 0 ? fmt(totalEvnt/countEvnt) : '$0'} promedio`;
+
+    document.getElementById('fin-avg').textContent = fmt(avg);
+    document.getElementById('fin-sub-avg').textContent = `Costo combinado por registro activo`;
+
+    // ── Tabla Asistencias ──
+    const sortedItems = Object.entries(itemBreak).sort((a,b) => b[1]-a[1]).slice(0,12);
+    const tbA = document.getElementById('fin-table-asist').querySelector('tbody');
+    if (sortedItems.length > 0) {
+        tbA.innerHTML = sortedItems.map(([k,v]) =>
+            `<tr><td>${k}</td><td>${fmt(v)}</td></tr>`
+        ).join('') + `<tr><td><b>TOTAL</b></td><td style="color:#48bb78"><b>${fmt(totalAsist)}</b></td></tr>`;
+    } else {
+        tbA.innerHTML = '<tr><td colspan="2" style="color:#718096">Sin datos numéricos de ítems.</td></tr>';
+    }
+
+    // ── Tabla Eventos ──
+    const sortedEvnts = Object.entries(evntBreak).sort((a,b) => b[1]-a[1]).slice(0,12);
+    const tbE = document.getElementById('fin-table-evnt').querySelector('tbody');
+    if (sortedEvnts.length > 0) {
+        tbE.innerHTML = sortedEvnts.map(([k,v]) =>
+            `<tr><td>${k}</td><td>${fmt(v)}</td></tr>`
+        ).join('') + `<tr><td><b>TOTAL</b></td><td style="color:#fc8181"><b>${fmt(totalEvnt)}</b></td></tr>`;
+    } else {
+        tbE.innerHTML = '<tr><td colspan="2" style="color:#718096">Sin tipos de evento identificados.</td></tr>';
+    }
+}
 </script>
 </body>
 </html>
